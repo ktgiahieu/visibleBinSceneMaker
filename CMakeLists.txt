@@ -1,17 +1,24 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 
-project(visibleBinSceneMaker)
+project(BinPickingSimulation)
 
-FIND_PACKAGE(BOOST REQUIRED)
+add_subdirectory(include)
+
 FIND_PACKAGE(PCL REQUIRED)
-FIND_PACKAGE(BULLET REQUIRED)
+
+if (WIN32)
+    find_package(Bullet CONFIG REQUIRED HINTS "bullet3\\share\\bullet3")
+elseif(UNIX AND NOT APPLE)
+    find_package(Bullet CONFIG REQUIRED HINTS "bullet3_linux\\share\\bullet3")
+endif ()
+
 FIND_PACKAGE(OpenMP)
 FIND_PACKAGE(CUDA)
 
 # For bullet lib. You may need to modify here.
 SET(__BULLET_INCLUDE_DIRS "${BULLET_INCLUDE_DIRS}; ${BULLET_INCLUDE_DIRS}/bullet/")
 SET(__BULLET_LIBRARY_DIRS "${BULLET_INCLUDE_DIRS}/../lib")
-SET(__BULLET_LIBRARIES "${BULLET_LIBRARIES};optimized;BulletCollision;debug;BulletCollision_Debug;optimized;BulletDynamics;debug;BulletDynamics_Debug;optimized;BulletInverseDynamics;debug;BulletInverseDynamics_Debug;optimized;HACD;debug;HACD_Debug")
+SET(__BULLET_LIBRARIES "${BULLET_LIBRARIES};optimized;LinearMath;optimized;BulletDynamics;optimized;BulletCollision;optimized;BulletInverseDynamics;optimized;HACD")
 
 
 
@@ -48,11 +55,13 @@ LINK_DIRECTORIES(${PCL_LIBRARY_DIRS} ${__BULLET_LIBRARY_DIRS})
 ADD_DEFINITIONS(${PCL_DEFINITIONS})
 
 ADD_EXECUTABLE(binSceneMaker binSceneMaker.cpp convexDecomposition.hpp setting.hpp)
-TARGET_LINK_LIBRARIES(binSceneMaker ${PCL_LIBRARIES} ${__BULLET_LIBRARIES})
+TARGET_LINK_LIBRARIES(binSceneMaker ${PCL_LIBRARIES} ${__BULLET_LIBRARIES} HPR meshSampling)
+TARGET_INCLUDE_DIRECTORIES(binSceneMaker PUBLIC ${HPR_INCLUDE_DIR} ${MESHSAMPLING_INCLUDE_DIR})
 
 IF(USE_CUDA)
 	CUDA_ADD_EXECUTABLE(visibleSceneMaker visibleSceneMaker.cpp setting.hpp visible_check.cu visible_check.cpp visible_check.h visible_check.cuh)
 ELSE()
 	ADD_EXECUTABLE(visibleSceneMaker visibleSceneMaker.cpp setting.hpp visible_check.cpp visible_check.h)
 ENDIF()
-TARGET_LINK_LIBRARIES(visibleSceneMaker ${PCL_LIBRARIES})
+TARGET_LINK_LIBRARIES(visibleSceneMaker ${PCL_LIBRARIES} HPR meshSampling)
+TARGET_INCLUDE_DIRECTORIES(visibleSceneMaker PUBLIC ${HPR_INCLUDE_DIR} ${MESHSAMPLING_INCLUDE_DIR})

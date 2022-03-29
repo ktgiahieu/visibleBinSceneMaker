@@ -21,17 +21,64 @@
 #include <pcl/common/geometry.h>
 #include <pcl/visualization/pcl_visualizer.h>
 
+#include "meshSampling.h"
+#include "HPR.h"
+
 #include <bullet/btBulletDynamicsCommon.h>
 #include <bullet/LinearMath/btIDebugDraw.h>
 
 #include "convexDecomposition.hpp"
-#include "setting.hpp"
+//#include "setting.hpp"
 
 template<typename T> constexpr const T pi() { return static_cast<T>(std::atan2(0.0, -1.0)); }
 
+class BinSceneMakerSetting1
+{
+public:
+	int model_num;
+	double precapture_wait;
+	int falling_interval;
+	int postsimulation_wait;
+	int random_seed;
+	double cup_r;
+	double cup_h;
+	double cup_restitution;
+	double cup_friction;
+	double model_restitution;
+	double model_friction;
+	double normalize_length;
+	int downsample_target_points_num;
+	double downsample_initial_leaf_size;
+	double downsample_factor;
+	bool visualization;
+	bool capture_screenshots;
+	std::string load_model_path;
+
+	BinSceneMakerSetting1():
+		model_num(12),
+		precapture_wait(0),
+		falling_interval(100),
+		postsimulation_wait(1000),
+		random_seed(0),
+		cup_r(1.2),
+		cup_h(3.0),
+		cup_restitution(0.05),
+		cup_friction(0.3),
+		model_restitution(0.05),
+		model_friction(0.3),
+		normalize_length(10.0),
+		downsample_target_points_num(2000),
+		downsample_initial_leaf_size(0.001),
+		downsample_factor(1.2),
+		visualization(true),
+		capture_screenshots(false),
+		load_model_path("../data/6018.STL")
+	{}
+};
+
 int main(int argc, char* argv[])
 {
-	const BinSceneMakerSetting setting(argc, argv);
+	const BinSceneMakerSetting1 setting;
 
 	const pcl::PointCloud<pcl::PointXYZ>::Ptr model_load(new pcl::PointCloud<pcl::PointXYZ>());
 
@@ -44,19 +91,75 @@ int main(int argc, char* argv[])
 	{
 		if (pcl::io::loadPCDFile(setting.load_model_path, *model_load) == -1)
 		{
-			error_exit("Model load error.");
+			//error_exit("Model load error.");
 		}
 	}
 	else if (boost::filesystem::path(setting.load_model_path).extension() == ".ply")
 	{
 		if (pcl::io::loadPLYFile(setting.load_model_path, *model_load) == -1)
 		{
-			error_exit("Model load error.");
+			//error_exit("Model load error.");
 		}
+	}
+	else if (boost::filesystem::path(setting.load_model_path).extension() == ".STL" || boost::filesystem::path(setting.load_model_path).extension() == ".stl")
+	{
+		std::string model_filename_ = setting.load_model_path;
+		//std::cout << "Loading mesh..." << std::endl;
+		pcl::PointCloud<pcl::PointXYZ>::Ptr model_sampling(new pcl::PointCloud<pcl::PointXYZ>());
+		//model_load.reset(new pcl::PointCloud<pcl::PointXYZ>());
+		meshSampling(model_filename_, 1000000, 0.001f, false, model_sampling);
+
+		//------------------------- Calculate MEAM --------------------------------------------
+		std::vector<std::vector<float>> camera_pos(6);
+		pcl::PointXYZ minPt, maxPt, avgPt;
+
+		pcl::getMinMax3D(*model_sampling, minPt, maxPt);
+		avgPt.x = (minPt.x + maxPt.x) / 2;
+		avgPt.y = (minPt.y + maxPt.y) / 2;
+		avgPt.z = (minPt.z + maxPt.z) / 2;
+
+		float cube_length = std::max(maxPt.x - minPt.x, std::max(maxPt.y - minPt.y, maxPt.z - minPt.z));
+
+		minPt.x = avgPt.x - cube_length;
+		minPt.y = avgPt.y - cube_length;
+		minPt.z = avgPt.z - cube_length;
+		maxPt.x = avgPt.x + cube_length;
+		maxPt.y = avgPt.y + cube_length;
+		maxPt.z = avgPt.z + cube_length;
+
+		camera_pos[0] = { avgPt.x, minPt.y, avgPt.z };
+		camera_pos[1] = { maxPt.x, avgPt.y, avgPt.z };
+		camera_pos[2] = { avgPt.x, maxPt.y, avgPt.z };
+		camera_pos[3] = { minPt.x, avgPt.y, avgPt.z };
+		camera_pos[4] = { avgPt.x, avgPt.y, maxPt.z };
+		camera_pos[5] = { avgPt.x, avgPt.y, minPt.z };
+
+		//std::cout << "Preparing Multiview Model....." << std::endl;
+
+		for (int i = 0; i < static_cast<int>(camera_pos.size()); ++i)
+		{
+			//std::cout << "Preparing Viewpoint " << i << "....." << std::endl;
+
+			pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xyz_HPR(new pcl::PointCloud<pcl::PointXYZ>());
+			HPR(model_sampling, camera_pos[i], 3, cloud_xyz_HPR);
+
+			*model_load += *cloud_xyz_HPR;
+
+		}
+
+		// centering
+		Eigen::Vector3d sum_of_pos = Eigen::Vector3d::Zero();
+		for (const auto& p : *(model_load)) sum_of_pos += p.getVector3fMap().cast<double>();
+
+		Eigen::Matrix4d transform_centering = Eigen::Matrix4d::Identity();
+		transform_centering.topRightCorner<3, 1>() = -sum_of_pos / model_load->size();
+
+		pcl::transformPointCloud(*model_load, *model_load, transform_centering);
+		pcl::transformPointCloud(*model_load, *model_load, Eigen::Vector3f(0, 0, 0), Eigen::Quaternionf(0.7071, 0, -0.7071, 0));
 	}
 	else
 	{
-		error_exit("PLY or PCD file are only available to load.");
+		//error_exit("PLY, STL or PCD file are only available to load.");
 	}
 
 	// centering
@@ -67,20 +170,6 @@ int main(int argc, char* argv[])
 	transform_centering.topRightCorner<3, 1>() = -sum_of_pos / model_load->size();
 
 	pcl::transformPointCloud(*model_load, *model_load, transform_centering);
-
-	// save centering model
-	if (boost::filesystem::path(setting.save_centering_model_path).extension() == ".pcd")
-	{
-		pcl::io::savePCDFileBinary(setting.save_centering_model_path, *model_load);
-	}
-	else if (boost::filesystem::path(setting.save_centering_model_path).extension() == ".ply")
-	{
-		pcl::io::savePLYFileBinary(setting.save_centering_model_path, *model_load);
-	}
-	else
-	{
-		error_exit("PLY or PCD file are only available to save.");
-	}
 	
 	//downsample less than 2000 points
 	const pcl::PointCloud<pcl::PointXYZ>::Ptr model_downsampled(new pcl::PointCloud<pcl::PointXYZ>(*model_load));
@@ -144,7 +233,7 @@ int main(int argc, char* argv[])
 	std::cout << "Normal Estimation: Finished." << std::endl;
 
 	// construct polygon mesh
-	pcl::PolygonMesh poly_mesh;
+	pcl::PolygonMesh poly_mesh, poly_mesh_viewer;
 	pcl::GreedyProjectionTriangulation<pcl::PointNormal> gpt;
 	gpt.setSearchRadius(100.0);
 	gpt.setMu(2.5);
@@ -157,14 +246,23 @@ int main(int argc, char* argv[])
 	gpt.setSearchMethod(kdtree_model_normal);
 	gpt.reconstruct(poly_mesh);
 	std::cout << "PolyMesh Construct: Finished." << std::endl;
-	
+	//load the polygon mesh directly if the file suffix is .STL
+	if (boost::filesystem::path(setting.load_model_path).extension() == ".STL" || boost::filesystem::path(setting.load_model_path).extension() == ".stl")
+	{
+		pcl::io::loadPolygonFileSTL(setting.load_model_path, poly_mesh_viewer);
+	}
+	else 
+	{
+		poly_mesh_viewer = poly_mesh;
+	}
+
 	//visualize polygon
 	boost::optional<pcl::visualization::PCLVisualizer::Ptr> polygon_viewer;
 
 	if (setting.visualization)
 	{
 		polygon_viewer = pcl::visualization::PCLVisualizer::Ptr(new pcl::visualization::PCLVisualizer("Polygon"));
-		(*polygon_viewer)->addPolygonMesh(poly_mesh);
+		(*polygon_viewer)->addPolygonMesh(poly_mesh_viewer);
 
 		(*polygon_viewer)->spinOnce();
 	}
@@ -448,7 +546,7 @@ int main(int argc, char* argv[])
 					float mat_v[16];
 					trans.getOpenGLMatrix(mat_v);
 
-					(*viewer)->updatePointCloudPose(cloud_name, Eigen::Affine3f(Eigen::Map<Eigen::Matrix4f>(mat_v)));
+					(*viewer )->updatePointCloudPose(cloud_name, Eigen::Affine3f(Eigen::Map<Eigen::Matrix4f>(mat_v)));
 				}
 			}
 		}
@@ -464,11 +562,6 @@ int main(int argc, char* argv[])
 			(*viewer)->spinOnce();
 			(*polygon_viewer)->spinOnce();
 
-			if (setting.capture_screenshots)
-			{
-				(*viewer)->saveScreenshot(setting.save_screenshots_dir + "/" + std::to_string(cnt_save) + ".png");
-				++cnt_save;
-			}
 		}
 	}
 
@@ -479,8 +572,7 @@ int main(int argc, char* argv[])
 	//
 
 	// make save_cloud and output transforms
-	const pcl::PointCloud<pcl::PointXYZ>::Ptr save_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-	std::ofstream ofs(setting.save_transforms_path);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr save_cloud(new pcl::PointCloud<pcl::PointXYZ>());
 
 	for (int idx = 0; idx < dynamicsWorld->getNumCollisionObjects(); idx++)
 	{
@@ -496,11 +588,11 @@ int main(int argc, char* argv[])
 			mat_v[13] /= scale;
 			mat_v[14] /= scale;
 
-			for (int i = 0; i < 14; ++i)
-			{
-				ofs << mat_v[i] << ", ";
-			}
-			ofs << mat_v[15] << std::endl;
+			//for (int i = 0; i < 14; ++i)
+			//{
+			//	ofs << mat_v[i] << ", ";
+			//}
+			//ofs << mat_v[15] << std::endl;
 
 			const pcl::PointCloud<pcl::PointXYZ>::Ptr model_transformed(new pcl::PointCloud<pcl::PointXYZ>);
 			pcl::transformPointCloud(*model_load, *model_transformed, Eigen::Affine3f(Eigen::Map<Eigen::Matrix4f>(mat_v)));
@@ -509,18 +601,6 @@ int main(int argc, char* argv[])
 	}
 
 	// save
-	if (boost::filesystem::path(setting.save_pointcloud_path).extension() == ".pcd")
-	{
-		pcl::io::savePCDFileBinary(setting.save_pointcloud_path, *save_cloud);
-	}
-	else if (boost::filesystem::path(setting.save_pointcloud_path).extension() == ".ply")
-	{
-		pcl::io::savePLYFileBinary(setting.save_pointcloud_path, *save_cloud);
-	}
-	else
-	{
-		error_exit("PLY or PCD file are only available to save.");
-	}
 	
 	// clean up bullet vars
 	for (int idx = 0; idx < dynamicsWorld->getNumCollisionObjects(); idx++)
@@ -546,10 +626,15 @@ int main(int argc, char* argv[])
 	delete dispatcher;
 	delete config;
 
+	pcl::transformPointCloud(*save_cloud, *save_cloud, Eigen::Vector3f(0, 0, 0), Eigen::Quaternionf(0.7071, -0.7071, 0, 0));
+	pcl::transformPointCloud(*save_cloud, *save_cloud, Eigen::Vector3f(0, 0, 0.5), Eigen::Quaternionf(1, 0, 0, 0));
+	std::vector<float> camera_pos = { 0, 0, 0};
+	HPR(save_cloud, camera_pos, 3, save_cloud);
 	// visualize
 	if (setting.visualization)
 	{
 		pcl::visualization::PCLVisualizer::Ptr viewer_scene(new pcl::visualization::PCLVisualizer("Bin Scene"));
+		viewer_scene->setCameraPosition(0, 0, 0,      0, 0, 0.4,     0, -1, 0);
 		viewer_scene->addPointCloud(save_cloud);
 
 		while (true)
