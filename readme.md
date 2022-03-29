@@ -1,15 +1,15 @@
 # Bin Picking Simulation
 
-## Video
-[![Video(YouTube)](https://img.youtube.com/vi/v7mqrS9xTY4/0.jpg)](https://youtu.be/v7mqrS9xTY4)
+This is a fork of the repo [visibleBinSceneMaker](https://github.com/naoya-chiba/visibleBinSceneMaker).
+All credits belong to the original authors [Dr. Naoya Chiba](https://github.com/naoya-chiba) and Dr. Koichi Hashimoto.
 
 ## Abstract
-This program helps to construct 3D scene for the bin picking based on the 3D pointcloud of an object.
+This is a ready-to-run program helps to construct 3D scene for the bin picking based on the 3D pointcloud of an object. 
 
 The project takes a .STL mesh model as an input, then it will create a synthetic scene using [Point Cloud Library(PCL)](http://pointclouds.org/) for pointcloud processing and [Bullet Physics](http://bulletphysics.org/wordpress/) for physics simulation.
 
-A poster in ROBOMECH 2017, "Development of program for generating pointcloud of bin scene using physical simulation and perspective camera model," introduces this programs.
-These programs help to construct 3D recognition algorithms for the bin picking based on the 3D pointcloud.
+## Video
+[![Video(YouTube)](https://img.youtube.com/vi/v7mqrS9xTY4/0.jpg)](https://youtu.be/v7mqrS9xTY4)
 
 # Requirements
 
