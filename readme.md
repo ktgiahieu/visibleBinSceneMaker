@@ -1,7 +1,8 @@
 # Bin Picking Simulation
 
 This is a fork of the repo [visibleBinSceneMaker](https://github.com/naoya-chiba/visibleBinSceneMaker).
-All credits belong to the original authors [Dr. Naoya Chiba](https://github.com/naoya-chiba) and Dr. Koichi Hashimoto.
+
+All credits belong to the original authors, [Dr. Naoya Chiba](https://github.com/naoya-chiba) and Dr. Koichi Hashimoto.
 
 ## Abstract
 This is a ready-to-run program helps to construct 3D scene for the bin picking based on the 3D pointcloud of an object. 
