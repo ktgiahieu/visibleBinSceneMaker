@@ -49,7 +49,7 @@ To build this project you will need:
 Install PCL as you wish, just don't install OpenNI2 at this stage
 
 
-![Result](https://github.com/ktgiahieu/BinPickingSimulation/blob/main/images/PCL.png)
+![Result](https://github.com/ktgiahieu/BinPickingSimulation/blob/master/images/PCL.png)
 
 * cmake 3.18.5
 
